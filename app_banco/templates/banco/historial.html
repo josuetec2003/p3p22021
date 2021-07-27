@@ -1,0 +1,52 @@
+{% extends 'banco/base.html' %}
+
+{% block title %}Historial de transacciones{% endblock %}
+
+{% block container %}
+
+<div class="row mt-5">
+    <div class="col-4">
+        <h3>Cuentas</h3>    
+        <form action="" method="post" id="frm-historial">
+            {% csrf_token %}
+            <p>
+                <label for="cbo-cuenta">Seleccione la cuenta</label>
+                <select name="cbo-cuenta" id="cbo-cuenta" class="form-select form-control-chosen">
+                    {% for c in cuentas %}
+                    <option value="{{c.id}}">Cuenta #{{c.id}} - {{ c.cliente }} - {{ c.saldo }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+
+            <p>
+                <button class="btn btn-primary">Ver historial de transacciones</button>
+            </p>
+        </form>    
+    </div>
+
+    <div class="col-8">
+        <div class="row">
+            <div class="col-6"><h3>Historial de transacciones</h3></div>
+            <div class="col-6 text-end">
+                <a href="#">Descargar PDF</a>
+            </div>
+        </div>
+        <div id="transacciones"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block js %}
+<script>
+    $(function () {
+        $('#frm-historial').on('submit', function (e) {
+            e.preventDefault();
+
+            $.post('', $(this).serialize(), function (response) {
+                $('#transacciones').html(response.html);
+            }, 'json');
+        })
+    })
+</script>
+{% endblock %}

@@ -1,0 +1,205 @@
+{% extends 'banco/base.html' %}
+
+{% block title %}Depositos y Retiros{% endblock %}
+
+{% block container %}
+    <!-- =============== PARA EL SUPER USER =============== -->
+    {% if request.user.is_superuser %}
+    <div class="row mt-3">
+        <div class="col-12 offset-md-3 col-md-6">
+            <h3>Depósito o retiro</h3>
+            <hr>
+
+            <form action="" method="post" id="frm-movimiento">
+                {% csrf_token %}
+                <!-- Combo para tipo de movimiento  -->
+                <p>
+                    <label for="cbo-transaccion">Tipo de transacción</label>
+                    <select name="cbo-transaccion" id="cbo-transaccion" class="form-select" required>
+                        <option value="">Seleccione</option>
+                        <option value="1">Depósito</option>
+                        <option value="2">Retiro</option>
+                        <option value="3">Transferencia</option>
+                    </select>
+                </p>
+
+                <!-- Seleccionar la cuenta  -->
+                <p>
+                    <label for="cbo-cuenta">Cuenta</label>
+                    <select name="cbo-cuenta" id="cbo-cuenta" class="form-select form-control-chosen">
+                        <option value="">Seleccione una cuenta</option>
+                        {% for c in cuentas %}
+                        <option value="{{c.id}}">Cuenta #{{c.id}} - {{ c.cliente }} - {{ c.saldo }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+
+                <!-- Campo para ingresar el monto -->
+                <p>
+                    <label for="txt-monto">Monto</label>
+                    <input id="txt-monto" name="txt-monto" type="number" min="1" class="form-control" required>
+                </p>
+
+                <!-- Boton que realiza la acción  -->
+                <p>
+                    <button type="submit" class="btn btn-primary">Realizar movimiento</button>                    
+                </p>
+            </form>
+
+        </div>        
+    </div>
+
+    <!-- =============== PARA EL CLIENTE =============== -->
+    {% else %}
+    <div class="row mt-3">
+        <div class="col-12 offset-md-3 col-md-6">
+            <h3>Transferencia</h3>
+            <hr>
+
+            <div>
+                <label for="cbo-cuenta-origen">Cuenta origen</label>
+                <select class="form-select" id="cbo-cuenta-origen">
+                    {% if cuentas_propias.count == 1 %}
+                        {% for c in cuentas_propias %}
+                        <option value="{{ c.id }}">Cuenta #{{ c.id }} - Saldo: {{ c.saldo }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="">Seleccione la cuenta</option>
+                        {% for c in cuentas_propias %}
+                        <option value="{{ c.id }}">{{ c }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+
+            <div class="mt-3">
+                <label for="txt-cuenta-destino">Cuenta destino</label>
+                <input type="number" id="txt-cuenta-destino" class="form-control">
+            </div>
+
+            <div class="mt-3">
+                <label for="txt-monto">Monto a transferir</label>
+                <input type="number" min="1" id="txt-monto" class="form-control">
+            </div>
+
+            <div class="mt-3">
+                <label for="txt-comentario">Comentarios</label>
+                <textarea id="txt-comentario" class="form-control" rows="3" placeholder="Opcional"></textarea>
+            </div>
+
+            <button data-csrf="{{ csrf_token }}" data-url="{% url 'transferencias_view' %}" data-accion="confirmar" class="btn btn-success mt-3 btn-transferir">Confirmar transferencia</button>
+        </div>
+    </div>
+    {% endif %}
+
+
+    <!-- Ventana modal con la informacion de confirmacion -->
+    <div class="modal fade" id="finalizarTransaccionModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">Finalizar la transacción</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Salir</button>
+                    <button type="button" data-csrf="{{ csrf_token }}" data-url="{% url 'transferencias_view' %}" data-accion="finalizar" class="btn btn-primary btn-transferir">Finalizar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block js %}
+<script>
+    $(function () {
+
+        $('.btn-transferir').on('click', function () {
+            var $btn   = $(this),
+                accion = $btn.data('accion'),
+                url    = $btn.data('url'),
+                csrf   = $btn.data('csrf'),
+                $cboOrigen  = $('#cbo-cuenta-origen'),
+                $txtDestino = $('#txt-cuenta-destino'),
+                $txtMonto   = $('#txt-monto'),
+                $txtComentario = $('#txt-comentario'),
+                ctx    = {
+                    'csrfmiddlewaretoken': csrf,
+                    'accion': accion,
+                    'cuenta-origen': $cboOrigen.val(),
+                    'cuenta-destino': $txtDestino.val(),
+                    'monto': $txtMonto.val(),
+                    'comentario': $txtComentario.val()
+                };
+
+            if (accion === 'confirmar')
+            {
+                // validaciones
+                if (!$cboOrigen.val())
+                {
+                    notify('error', 'Debe seleccionar la cuenta origen');
+                    return;
+                }
+
+                if (!$txtDestino.val().trim())
+                {
+                    notify('error', 'Debe ingresar la cuenta destino');
+                    $txtDestino.focus();
+                    return;
+                }
+
+                if (!$txtMonto.val().trim())
+                {
+                    notify('error', 'Debe ingresar el monto a transferir');
+                    $txtMonto.focus();
+                    return;
+                }
+
+                if (isNaN($txtMonto.val().trim()))
+                {
+                    notify('error', 'El valor ingresado para el monto no es válido');
+                    $txtMonto.val('').focus();
+                    return;
+                }
+
+                $.post(url, ctx, function (response) {
+                    if (response.color == 'error')
+                    {
+                        notify(response.color, response.msj);
+                        return;
+                    }
+
+                    $('#finalizarTransaccionModal').find('.modal-body').html(response.msj);
+                    $('#finalizarTransaccionModal').modal('show');
+                }, 'json');
+
+            } else { // finalizar
+                $.post(url, ctx, function(response) {
+                    if (response.OK)
+                    {
+                        alert(response.msj);
+                        $('#finalizarTransaccionModal').find('.modal-body').empty();
+                        $('#finalizarTransaccionModal').modal('hide');
+                    } else {
+                        notify('error', response.msj);
+                    }
+                }, 'json');
+            }
+        });
+        
+        $('#frm-movimiento').on('submit', function (e) {
+            e.preventDefault();
+            var me = $(this);
+            
+            $.post('', $(this).serialize(), function (response) {
+                notify(response.color, response.msj);
+                $('#cbo-transaccion').val('');
+                $('#cbo-cuenta').val('');
+                $('#txt-monto').val('');
+            }, 'json');
+        });
+
+    });
+</script>
+{% endblock %}
