@@ -29,6 +29,10 @@ urlpatterns = [
     path('historial/', views.historial, name='historial_view'),
 
     path('transferencias/', views.transferencias_view, name="transferencias_view"),
+    path('clientes/', views.clientes_view, name="clientes_view"),
+
+    path('clientes/gestion/', views.clientes_gestion, name="clientes_gestion"),
+    path('clientes/actualizar/<int:id>/', views.clientes_gestion, name="clientes_actualizar"),
     
 
     path('admin/', admin.site.urls),

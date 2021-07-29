@@ -1,10 +1,12 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse, Http404
 from django.db import transaction
 from django.db.models import Sum, Q
 from django.core.mail import EmailMessage
-from .models import Cuenta, Transaccion
+from django.urls import reverse
+from .models import Cuenta, Transaccion, Cliente
 from datetime import datetime
+from .forms import ClienteForm
 
 def home(request):
     if request.is_ajax() and request.method == 'POST':
@@ -216,22 +218,34 @@ def transferencias_view(request):
                     return JsonResponse({'OK': OK, 'msj': msj})
                 
                 # Las validaciones pasaron, realizamos la transaccion
-                with transaction.atomic():
-                    try:
+                try:
+                    with transaction.atomic():
                         # debito en la cuenta origen
                         cuenta_origen.saldo -= monto
                         cuenta_origen.save()
+
+                        #raise Exception('Este error es intencional')
 
                         # credito en la cuenta destino
                         cuenta_destino.saldo += monto
                         cuenta_destino.save()
 
+
+                        # registrar el movimiento
+                        Transaccion.objects.create(
+                            movimiento = '3', # Transferencia
+                            origen = cuenta_origen,
+                            destino = cuenta_destino,
+                            monto = float(monto),
+                            comentario = comentario
+                        )
+
                         # en un try
                         # enviar correo electronico a ambos clientes
                         return JsonResponse({'OK': True, 'msj': 'La transacción se realizó con éxito'})
 
-                    except:
-                        return JsonResponse({'OK': False, 'msj': 'Ocurrió un error inesperado'})
+                except Exception as e:
+                    return JsonResponse({'OK': False, 'msj': str(e)})
 
 
 
@@ -246,7 +260,7 @@ def historial(request):
     if request.user.is_superuser:
         if request.method == 'POST' and request.is_ajax():
             cuenta_id = request.POST.get('cbo-cuenta')
-            #cuenta = Cuenta.objects.get(pk=cuenta_id)
+            cuenta = Cuenta.objects.get(pk=cuenta_id)
 
             # consultar las movimientos de la cuenta
             transacciones = Transaccion.objects.filter(Q(origen__id=cuenta_id) | Q(destino__id=cuenta_id)).order_by('-fecha')
@@ -266,6 +280,7 @@ def historial(request):
                     tr += f'''
                         <tr>
                             <td>{trans.fecha}</td>
+                            <td>Depósito</td>
                             <td>-</td>
                             <td class="text-success text-end">{trans.monto}</td>
                         </tr>
@@ -275,13 +290,33 @@ def historial(request):
                     tr += f'''
                         <tr>
                             <td>{trans.fecha}</td>
+                            <td>Retiro</td>
                             <td class="text-danger text-end">{trans.monto}</td>
                             <td>-</td>
                         </tr>
                     '''
 
                 else: # Transferencias
-                    pass                
+                    if cuenta == trans.origen:
+                        # la cuenta está en el campo origen: debito por transferencia
+                        tr += f'''
+                            <tr>
+                                <td>{trans.fecha}</td>
+                                <td>Débito por tranf.</td>
+                                <td class="text-danger text-end">{trans.monto}</td>
+                                <td>-</td>
+                            </tr>
+                        '''
+                    else:
+                        # la cuenta está en el campo destino: credito por transferencia
+                        tr += f'''
+                            <tr>
+                                <td>{trans.fecha}</td>
+                                <td>Crédito por tranf.</td>
+                                <td>-</td>
+                                <td class="text-success text-end">{trans.monto}</td>
+                            </tr>
+                        '''
 
             color_saldo_actual = 'text-danger' if saldo_actual <= 0 else 'text-success'
 
@@ -290,20 +325,22 @@ def historial(request):
                     <thead>
                         <tr>
                             <th>Fecha</th>
-                            <th>Retiro</th>
-                            <th>Depósito</th>
+                            <th>Concepto</th>
+                            <th>Débito</th>
+                            <th>Crédito</th>
                         </tr>
                     </thead>
                     <tbody>{tr}</tbody>
                     <tfoot>
                         <tr>
                             <th class="table-secondary"></th>
+                            <th class="table-secondary"></th>
                             <th class="table-secondary text-danger text-end">{sum_retiros}</th>
                             <th class="table-secondary text-success text-end">{sum_depositos}</th>
                         </tr>
                         <tr>
-                            <th class="table-secondary"></th>
-                            <th colspan="2" class="table-secondary text-end {color_saldo_actual}">Saldo actual: {saldo_actual}</th>
+                            <th class="table-dark"></th>
+                            <th colspan="3" class="table-dark text-white text-end {color_saldo_actual}">Saldo actual: {saldo_actual}</th>
                         </tr>
                     </tfoot>
                 </table>
@@ -319,5 +356,30 @@ def historial(request):
     cuentas = Cuenta.objects.all()
     return render(request, 'banco/historial.html', {'cuentas': cuentas})
 
+def clientes_view(request):
+    id = request.GET.get('id')
+    
+    cliente = None
+    if id:
+        cliente = get_object_or_404(Cliente, pk=id)
+
+    form = ClienteForm(instance=cliente) # instancia
+    clientes = Cliente.objects.all().order_by('nombre', 'apellido')
+    return render(request, 'banco/clientes.html', {'form': form, 'clientes': clientes})
+
+def clientes_gestion(request, id = None):
+    if request.method == 'POST':
+        cliente = get_object_or_404(Cliente, pk=id) if id else None
+        form = ClienteForm(request.POST, instance=cliente)
+
+        # form.save() hará un update si la instancia es un objeto del cliente que se quiere actualizar
+        # form.save() hará un insert si la instancia es nula (None)
+
+        if form.is_valid():
+            form.save()
+            return redirect(reverse('clientes_view'))
+        else:
+            clientes = Cliente.objects.all().order_by('nombre', 'apellido')
+            return render(request, 'banco/clientes.html', {'form': form, 'clientes': clientes})
 
 

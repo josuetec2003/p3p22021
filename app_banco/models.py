@@ -37,6 +37,9 @@ class Transaccion(models.Model):
     monto = models.FloatField(null=True, blank=True)
     comentario = models.TextField(null=True, blank=True)
 
+    def __str__(self):
+        return f'{self.get_movimiento_display()} - {self.monto}'
+
     class Meta:
         verbose_name_plural = 'Transacciones'
 
